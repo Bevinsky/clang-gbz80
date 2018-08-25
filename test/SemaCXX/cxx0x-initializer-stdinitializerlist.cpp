@@ -136,24 +136,31 @@ void auto_deduction() {
   auto l3 {1};
   static_assert(same_type<decltype(l), std::initializer_list<int>>::value, "");
   static_assert(same_type<decltype(l3), int>::value, "");
-  auto bl = {1, 2.0}; // expected-error {{cannot deduce}}
+  auto bl = {1, 2.0}; // expected-error {{deduced conflicting types ('int' vs 'double') for initializer list element type}}
+
+  void f1(int), f1(float), f2(int), f3(float);
+  auto fil = {f1, f2};
+  auto ffl = {f1, f3};
+  auto fl = {f1, f2, f3}; // expected-error {{deduced conflicting types ('void (*)(int)' vs 'void (*)(float)') for initializer list element type}}
 
   for (int i : {1, 2, 3, 4}) {}
+  for (int j : {1.0, 2.0, 3.0f, 4.0}) {} // expected-error {{deduced conflicting types ('double' vs 'float') for initializer list element type}}
 }
 
 void dangle() {
-  new auto{1, 2, 3}; // expected-error {{cannot use list-initialization}}
+  new auto{1, 2, 3}; // expected-error {{new expression for type 'auto' contains multiple constructor arguments}}
   new std::initializer_list<int>{1, 2, 3}; // expected-warning {{at the end of the full-expression}}
 }
 
 struct haslist1 {
-  std::initializer_list<int> il = {1, 2, 3}; // expected-warning{{at the end of the constructor}}
-  std::initializer_list<int> jl{1, 2, 3}; // expected-warning{{at the end of the constructor}}
+  std::initializer_list<int> il // expected-note {{declared here}}
+    = {1, 2, 3}; // ok, unused
+  std::initializer_list<int> jl{1, 2, 3}; // expected-note {{default member init}}
   haslist1();
 };
 
-haslist1::haslist1()
-: il{1, 2, 3} // expected-warning{{at the end of the constructor}}
+haslist1::haslist1() // expected-error {{backing array for 'std::initializer_list' member 'jl' is a temporary object}}
+: il{1, 2, 3} // expected-error {{backing array for 'std::initializer_list' member 'il' is a temporary object}}
 {}
 
 namespace PR12119 {
