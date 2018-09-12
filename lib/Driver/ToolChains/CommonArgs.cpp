@@ -260,6 +260,16 @@ static StringRef getWebAssemblyTargetCPU(const ArgList &Args) {
   return "generic";
 }
 
+/// Get the (LLVM) name of the Z80 cpu we are targeting.
+static StringRef getGBZ80TargetCPU(const ArgList &Args,
+                                 const llvm::Triple &Triple) {
+  if (const Arg *A = Args.getLastArg(options::OPT_mcpu_EQ))
+    return A->getValue();
+
+  // Select the default CPU if none was given (or detection failed).
+  return Triple.getArchName();
+}
+
 std::string tools::getCPUName(const ArgList &Args, const llvm::Triple &T,
                               bool FromAs) {
   Arg *A;
@@ -354,6 +364,9 @@ std::string tools::getCPUName(const ArgList &Args, const llvm::Triple &T,
   case llvm::Triple::wasm32:
   case llvm::Triple::wasm64:
     return getWebAssemblyTargetCPU(Args);
+
+  case llvm::Triple::gbz80:
+    return getGBZ80TargetCPU(Args, T);
   }
 }
 

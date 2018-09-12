@@ -7150,6 +7150,88 @@ public:
 }
 
 //===----------------------------------------------------------------------===//
+// GBZ80 ABI Implementation.
+//===----------------------------------------------------------------------===//
+
+namespace {
+
+  class GBZ80ABIInfo : public ABIInfo {
+  public:
+    GBZ80ABIInfo(CodeGenTypes &CGT) : ABIInfo(CGT) {}
+
+    ABIArgInfo classifyReturnType(QualType RetTy) const;
+    ABIArgInfo classifyArgumentType(QualType RetTy) const;
+    void computeInfo(CGFunctionInfo &FI) const override {
+      if (!getCXXABI().classifyReturnType(FI))
+        FI.getReturnInfo() = classifyReturnType(FI.getReturnType());
+      for (auto &I : FI.arguments())
+        I.info = classifyArgumentType(I.type);
+    }
+    Address EmitVAArg(CodeGenFunction &CGF, Address VAListAddr,
+      QualType Ty) const override {
+      return EmitVAArgInstr(CGF, VAListAddr, Ty, classifyArgumentType(Ty));
+    }
+  };
+
+  ABIArgInfo GBZ80ABIInfo::classifyArgumentType(QualType Ty) const {
+    Ty = useFirstFieldIfTransparentUnion(Ty);
+
+    if (isAggregateTypeForABI(Ty)) {
+      // Records with non-trivial destructors/copy-constructors should not be
+      // passed by value.
+      if (CGCXXABI::RecordArgABI RAA = getRecordArgABI(Ty, getCXXABI()))
+        return getNaturalAlignIndirect(Ty, RAA == CGCXXABI::RAA_DirectInMemory);
+
+      return getNaturalAlignIndirect(Ty);
+    }
+
+    // Treat an enum type as its underlying type.
+    if (const EnumType *EnumTy = Ty->getAs<EnumType>())
+      Ty = EnumTy->getDecl()->getIntegerType();
+
+    // Don't extend integers.
+    return ABIArgInfo::getDirect();
+  }
+
+  ABIArgInfo GBZ80ABIInfo::classifyReturnType(QualType RetTy) const {
+    if (RetTy->isVoidType())
+      return ABIArgInfo::getIgnore();
+
+    if (isAggregateTypeForABI(RetTy))
+      return getNaturalAlignIndirect(RetTy);
+
+    // Treat an enum type as its underlying type.
+    if (const EnumType *EnumTy = RetTy->getAs<EnumType>())
+      RetTy = EnumTy->getDecl()->getIntegerType();
+
+    // Don't extend integers.
+    return ABIArgInfo::getDirect();
+  }
+
+  class GBZ80TargetCodeGenInfo : public TargetCodeGenInfo {
+  public:
+    GBZ80TargetCodeGenInfo(CodeGenTypes &CGT)
+      : TargetCodeGenInfo(new GBZ80ABIInfo(CGT)) { }
+
+    void setTargetAttributes(const Decl *D, llvm::GlobalValue *GV,
+      CodeGen::CodeGenModule &CGM) const override {
+#if 0
+      // For future use
+      const auto *FD = dyn_cast_or_null<FunctionDecl>(D);
+      if (!FD) return;
+      auto *Fn = cast<llvm::Function>(GV);
+
+      if (FD->getAttr<AVRInterruptAttr>())
+        Fn->addFnAttr("interrupt");
+
+      if (FD->getAttr<AVRSignalAttr>())
+        Fn->addFnAttr("signal");
+#endif
+    }
+  };
+}
+
+//===----------------------------------------------------------------------===//
 // TCE ABI Implementation (see http://tce.cs.tut.fi). Uses mostly the defaults.
 // Currently subclassed only to implement custom OpenCL C function attribute
 // handling.
@@ -9205,6 +9287,8 @@ const TargetCodeGenInfo &CodeGenModule::getTargetCodeGenInfo() {
   case llvm::Triple::spir:
   case llvm::Triple::spir64:
     return SetCGInfo(new SPIRTargetCodeGenInfo(Types));
+  case llvm::Triple::gbz80:
+    return SetCGInfo(new GBZ80TargetCodeGenInfo(Types));
   }
 }
 
