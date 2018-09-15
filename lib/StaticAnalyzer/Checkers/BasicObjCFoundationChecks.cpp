@@ -14,13 +14,13 @@
 //===----------------------------------------------------------------------===//
 
 #include "ClangSACheckers.h"
-#include "SelectorExtras.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/DeclObjC.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprObjC.h"
 #include "clang/AST/StmtObjC.h"
 #include "clang/Analysis/DomainSpecific/CocoaConventions.h"
+#include "clang/Analysis/SelectorExtras.h"
 #include "clang/StaticAnalyzer/Core/BugReporter/BugType.h"
 #include "clang/StaticAnalyzer/Core/Checker.h"
 #include "clang/StaticAnalyzer/Core/CheckerManager.h"
@@ -156,6 +156,11 @@ void NilArgChecker::warnIfNilArg(CheckerContext &C,
   if (!State->isNull(msg.getArgSVal(Arg)).isConstrainedTrue())
       return;
 
+  // NOTE: We cannot throw non-fatal errors from warnIfNilExpr,
+  // because it's called multiple times from some callers, so it'd cause
+  // an unwanted state split if two or more non-fatal errors are thrown
+  // within the same checker callback. For now we don't want to, but
+  // it'll need to be fixed if we ever want to.
   if (ExplodedNode *N = C.generateErrorNode()) {
     SmallString<128> sbuf;
     llvm::raw_svector_ostream os(sbuf);
@@ -436,8 +441,7 @@ void CFNumberChecker::checkPreStmt(const CallExpr *CE,
     return;
 
   // Get the value of the "theType" argument.
-  const LocationContext *LCtx = C.getLocationContext();
-  SVal TheTypeVal = state->getSVal(CE->getArg(1), LCtx);
+  SVal TheTypeVal = C.getSVal(CE->getArg(1));
 
   // FIXME: We really should allow ranges of valid theType values, and
   //   bifurcate the state appropriately.
@@ -457,7 +461,7 @@ void CFNumberChecker::checkPreStmt(const CallExpr *CE,
   // Look at the value of the integer being passed by reference.  Essentially
   // we want to catch cases where the value passed in is not equal to the
   // size of the type being created.
-  SVal TheValueExpr = state->getSVal(CE->getArg(2), LCtx);
+  SVal TheValueExpr = C.getSVal(CE->getArg(2));
 
   // FIXME: Eventually we should handle arbitrary locations.  We can do this
   //  by having an enhanced memory model that does low-level typing.
@@ -571,7 +575,7 @@ void CFRetainReleaseChecker::checkPreStmt(const CallExpr *CE,
 
   // Get the argument's value.
   const Expr *Arg = CE->getArg(0);
-  SVal ArgVal = state->getSVal(Arg, C.getLocationContext());
+  SVal ArgVal = C.getSVal(Arg);
   Optional<DefinedSVal> DefArgVal = ArgVal.getAs<DefinedSVal>();
   if (!DefArgVal)
     return;
@@ -977,8 +981,7 @@ assumeCollectionNonEmpty(CheckerContext &C, ProgramStateRef State,
   if (!State)
     return nullptr;
 
-  SymbolRef CollectionS =
-    State->getSVal(FCS->getCollection(), C.getLocationContext()).getAsSymbol();
+  SymbolRef CollectionS = C.getSVal(FCS->getCollection()).getAsSymbol();
   return assumeCollectionNonEmpty(C, State, CollectionS, Assumption);
 }
 
@@ -1166,7 +1169,7 @@ void ObjCLoopChecker::checkDeadSymbols(SymbolReaper &SymReaper,
 
 namespace {
 /// \class ObjCNonNilReturnValueChecker
-/// \brief The checker restricts the return values of APIs known to
+/// The checker restricts the return values of APIs known to
 /// never (or almost never) return 'nil'.
 class ObjCNonNilReturnValueChecker
   : public Checker<check::PostObjCMessage,
@@ -1206,7 +1209,7 @@ ProgramStateRef
 ObjCNonNilReturnValueChecker::assumeExprIsNonNull(const Expr *NonNullExpr,
                                                   ProgramStateRef State,
                                                   CheckerContext &C) const {
-  SVal Val = State->getSVal(NonNullExpr, C.getLocationContext());
+  SVal Val = C.getSVal(NonNullExpr);
   if (Optional<DefinedOrUnknownSVal> DV = Val.getAs<DefinedOrUnknownSVal>())
     return State->assume(*DV, true);
   return State;

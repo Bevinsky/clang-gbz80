@@ -76,6 +76,8 @@
 // RUN:             | FileCheck -check-prefix=NOCI %s
 // RUN: %clang -### -c %s -g -gcolumn-info -target x86_64-scei-ps4 2>&1 \
 // RUN:             | FileCheck -check-prefix=CI %s
+// RUN: %clang -### -c %s -gsce -target x86_64-unknown-linux 2>&1 \
+// RUN:             | FileCheck -check-prefix=NOCI %s
 
 // RUN: %clang -### -c -gdwarf-2 %s 2>&1 \
 // RUN:             | FileCheck -check-prefix=G_ONLY_DWARF2 %s
@@ -131,15 +133,32 @@
 // RUN: %clang -### -c -gstrict-dwarf -gno-strict-dwarf %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=GIGNORE %s
 //
-// RUN: %clang -### -c -ggnu-pubnames %s 2>&1 | FileCheck -check-prefix=GOPT %s
+// RUN: %clang -### -c -ggnu-pubnames %s 2>&1 | FileCheck -check-prefix=GPUB %s
+// RUN: %clang -### -c %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+// RUN: %clang -### -c -ggnu-pubnames -gno-gnu-pubnames %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+// RUN: %clang -### -c -ggnu-pubnames -gno-pubnames %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+//
+// RUN: %clang -### -c -gpubnames %s 2>&1 | FileCheck -check-prefix=PUB %s
+// RUN: %clang -### -c %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+// RUN: %clang -### -c -gpubnames -gno-gnu-pubnames %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+// RUN: %clang -### -c -gpubnames -gno-pubnames %s 2>&1 | FileCheck -check-prefix=NOPUB %s
+//
+// RUN: %clang -### -c -gsplit-dwarf %s 2>&1 | FileCheck -check-prefix=GPUB %s
+// RUN: %clang -### -c -gsplit-dwarf -gno-pubnames %s 2>&1 | FileCheck -check-prefix=NOPUB %s
 //
 // RUN: %clang -### -c -gdwarf-aranges %s 2>&1 | FileCheck -check-prefix=GARANGE %s
 //
-// RUN: %clang -### -fdebug-types-section %s 2>&1 \
+// RUN: %clang -### -fdebug-types-section -target x86_64-unknown-linux %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=FDTS %s
 //
-// RUN: %clang -### -fdebug-types-section -fno-debug-types-section %s 2>&1 \
+// RUN: %clang -### -fdebug-types-section -fno-debug-types-section -target x86_64-unknown-linux %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=NOFDTS %s
+//
+// RUN: %clang -### -fdebug-types-section -target x86_64-apple-darwin %s 2>&1 \
+// RUN:        | FileCheck -check-prefix=FDTSE %s
+//
+// RUN: %clang -### -fdebug-types-section -fno-debug-types-section -target x86_64-apple-darwin %s 2>&1 \
+// RUN:        | FileCheck -check-prefix=NOFDTSE %s
 //
 // RUN: %clang -### -g -gno-column-info %s 2>&1 \
 // RUN:        | FileCheck -check-prefix=NOCI %s
@@ -219,13 +238,19 @@
 //
 // GIGNORE-NOT: "argument unused during compilation"
 //
-// GOPT: -generate-gnu-dwarf-pub-sections
+// GPUB: -ggnu-pubnames
+// NOPUB-NOT: -ggnu-pubnames
+// NOPUB-NOT: -gpubnames
+//
+// PUB: -gpubnames
 //
 // GARANGE: -generate-arange-section
 //
-// FDTS: "-backend-option" "-generate-type-units"
+// FDTS: "-mllvm" "-generate-type-units"
+// FDTSE: error: unsupported option '-fdebug-types-section' for target 'x86_64-apple-darwin'
 //
-// NOFDTS-NOT: "-backend-option" "-generate-type-units"
+// NOFDTS-NOT: "-mllvm" "-generate-type-units"
+// NOFDTSE-NOT: error: unsupported option '-fdebug-types-section' for target 'x86_64-apple-darwin'
 //
 // CI: "-dwarf-column-info"
 //
@@ -243,3 +268,13 @@
 // RUN: %clang -###                  %s 2>&1 | FileCheck -check-prefix=NOMACRO %s
 // MACRO: "-debug-info-macro"
 // NOMACRO-NOT: "-debug-info-macro"
+//
+// RUN: %clang -### -gdwarf-5 -gembed-source %s 2>&1 | FileCheck -check-prefix=GEMBED_5 %s
+// RUN: %clang -### -gdwarf-2 -gembed-source %s 2>&1 | FileCheck -check-prefix=GEMBED_2 %s
+// RUN: %clang -### -gdwarf-5 -gno-embed-source %s 2>&1 | FileCheck -check-prefix=NOGEMBED_5 %s
+// RUN: %clang -### -gdwarf-2 -gno-embed-source %s 2>&1 | FileCheck -check-prefix=NOGEMBED_2 %s
+//
+// GEMBED_5:  "-gembed-source"
+// GEMBED_2:  error: invalid argument '-gembed-source' only allowed with '-gdwarf-5'
+// NOGEMBED_5-NOT:  "-gembed-source"
+// NOGEMBED_2-NOT:  error: invalid argument '-gembed-source' only allowed with '-gdwarf-5'
